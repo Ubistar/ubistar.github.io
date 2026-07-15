@@ -1,0 +1,12 @@
+[Unit]
+Description=Push LiWai monitor snapshot to Cloudflare D1 bridge
+After=network-online.target liwai-monitor.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/liwai-cloudflare-push.env
+ExecStart=/usr/local/bin/liwai-cloudflare-push
+User=root
+Nice=10
+MemoryMax=32M
