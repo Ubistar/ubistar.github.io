@@ -147,7 +147,7 @@ document.querySelectorAll(".themes button").forEach((button) => button.addEventL
   localStorage.setItem("liwai-theme", button.dataset.theme);
   document.querySelectorAll(".themes button").forEach((item) => item.classList.toggle("active", item === button));
 }));
-const savedTheme = localStorage.getItem("liwai-theme") || "pearl";
+const savedTheme = localStorage.getItem("liwai-theme") || "paper";
 document.documentElement.dataset.theme = savedTheme;
 document.querySelectorAll(".themes button").forEach((item) => item.classList.toggle("active", item.dataset.theme === savedTheme));
 $("retry").addEventListener("click", load); $("refresh").addEventListener("click", load);
