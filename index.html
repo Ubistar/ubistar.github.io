@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="pearl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="24小时监测蠡歪直播间开播与偷懒时长">
+  <meta name="theme-color" content="#5b5bd6">
+  <title>蠡歪煮啵偷懒旷工监测站</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar panel">
+      <a class="brand" href="#top"><span class="brand-mark">歪</span><span><strong>蠡歪煮啵偷懒旷工监测站</strong><small>LIWAI ATTENDANCE OFFICE · SINCE 2026.07.16</small></span></a>
+      <div class="top-actions">
+        <nav class="themes" aria-label="切换主题">
+          <button data-theme="pearl" class="active"><i class="pearl"></i>Pearl</button>
+          <button data-theme="night"><i class="night"></i>夜巡</button>
+          <button data-theme="paper"><i class="paper"></i>公报</button>
+        </nav>
+        <a class="room-link" href="https://live.bilibili.com/1863473244" target="_blank" rel="noreferrer">B站房间 <b>1863473244</b> ↗</a>
+      </div>
+    </header>
+
+    <div id="notice" class="notice" hidden><strong>数据线路待命</strong><span id="noticeText">正在连接 Cloudflare 数据桥。</span><button id="retry">立即重试</button></div>
+
+    <section class="hero-grid" id="top">
+      <article id="hero" class="hero panel">
+        <div id="statusLine" class="status unknown"><i></i><span>正在连接监测数据</span></div>
+        <div class="hero-body">
+          <div>
+            <p id="clockLabel" class="eyebrow">本次状态持续时间</p>
+            <h1><span id="heroTitle">正在取证</span><time id="statusClock">--:--:--</time></h1>
+            <p id="heroCopy" class="hero-copy">正在调取直播间监测记录，请煮啵端正态度，不要趁机摸鱼。</p>
+          </div>
+          <div id="orbit" class="orbit"><span>▱</span><i></i></div>
+        </div>
+        <div class="hero-actions"><a class="primary" href="https://live.bilibili.com/1863473244" target="_blank" rel="noreferrer">前往催播 ↗</a><span id="lastCheck">● 等待首次同步</span></div>
+      </article>
+
+      <aside class="verdict panel">
+        <div class="heading"><span><small>DAILY VERDICT</small><h2>今日判词</h2></span><b>01</b></div>
+        <span id="todayRating" class="rating warn">正在取证</span>
+        <blockquote id="todayVerdict">“监测站正在连接云端台账，任何偷懒行为最终都会留下证据。”</blockquote>
+        <div id="stamp" class="stamp">旷工</div>
+        <footer>监察员：全体观众 · 数据来自独立监测服务器</footer>
+      </aside>
+    </section>
+
+    <section class="kpis" aria-label="今日统计">
+      <article class="kpi panel"><i>▣</i><div><span>今日开播</span><strong id="todayLive">--小时 --分</strong><small id="sessions">等待同步</small></div></article>
+      <article class="kpi panel danger"><i>◷</i><div><span>今日偷懒</span><strong id="todayLazy">--小时 --分</strong><small id="lazyHint">一秒都不会少记</small></div></article>
+      <article class="kpi panel"><i>▥</i><div><span>本周出勤率</span><strong id="attendance">--%</strong><small id="weekRating">正在统计</small></div></article>
+      <article class="kpi panel"><i>⚑</i><div><span>连续旷工</span><strong id="streak">--天</strong><small>偷懒档案持续累积</small></div></article>
+    </section>
+
+    <section class="analytics">
+      <article class="chart-card panel">
+        <div class="heading"><span><small>SINCE LAUNCH</small><h2>每日开播与偷懒时长</h2></span><div class="legend"><i></i>开播 <i></i>偷懒</div></div>
+        <div id="chart" class="chart"><div class="empty">正在建立第一份出勤记录</div></div>
+      </article>
+      <article class="records panel">
+        <div class="heading"><span><small>RECENT LOG</small><h2>最近记录</h2></span><a href="#ledger">查看全部 →</a></div>
+        <div class="table-wrap"><table><thead><tr><th>日期</th><th>开播</th><th>偷懒</th><th>评价</th></tr></thead><tbody id="recentRows"><tr><td colspan="4" class="empty-cell">等待云端数据</td></tr></tbody></table></div>
+      </article>
+    </section>
+
+    <section class="reports">
+      <article class="report panel"><div class="watermark">日</div><div class="heading"><span><small id="dailyDate">DAILY REPORT · PENDING</small><h2>煮啵每日偷懒报告</h2></span><span id="dailyRating" class="rating warn">待出具</span></div><p id="dailyReport" class="report-lead">首次数据同步后，本日偷懒报告将在这里自动生成。</p><dl><div><dt>开播</dt><dd id="reportLive">—</dd></div><div><dt>偷懒</dt><dd id="reportLazy">—</dd></div><div><dt>开播次数</dt><dd id="reportSessions">—</dd></div><div><dt>首次开播</dt><dd id="firstLive">—</dd></div></dl></article>
+      <article class="report weekly panel"><div class="watermark">周</div><div class="heading"><span><small id="weekDate">WEEKLY REVIEW · PENDING</small><h2>煮啵每周偷懒总结</h2></span><span id="weeklyRating" class="rating warn">待出具</span></div><p id="weeklyReport" class="report-lead">一周数据正在积累，监察委员会暂不下结论。</p><div id="ring" class="ring"><strong>--%</strong><span>本周出勤率</span></div><dl><div><dt>周开播</dt><dd id="weekLive">—</dd></div><div><dt>周偷懒</dt><dd id="weekLazy">—</dd></div><div><dt>出勤天数</dt><dd id="activeDays">—</dd></div></dl></article>
+    </section>
+
+    <section id="ledger" class="ledger panel">
+      <div class="heading ledger-head"><span><small>PERMANENT ATTENDANCE LEDGER</small><h2>永久出勤台账</h2><p>自本站上线起逐日保存；数据只增不减，偷懒行为无处遁形。</p></span><span class="count"><b id="archiveDays">0</b> 已归档天数</span></div>
+      <div class="table-wrap"><table><thead><tr><th>日期</th><th>开播时长</th><th>偷懒时长</th><th>开播次数</th><th>首次开播</th><th>监察结论</th></tr></thead><tbody id="ledgerRows"><tr><td colspan="6" class="empty-cell">监测记录即将从今天开始</td></tr></tbody></table></div>
+    </section>
+
+    <footer class="footer"><span><i id="syncDot"></i> Ubuntu 24h 监测 · Cloudflare 云端台账</span><span id="footerStatus">等待数据桥上线 <button id="refresh">立即刷新</button></span></footer>
+  </main>
+</body>
+</html>
