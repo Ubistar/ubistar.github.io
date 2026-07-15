@@ -1,0 +1,12 @@
+[Unit]
+Description=Push LiWai monitor snapshot every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+RandomizedDelaySec=5s
+Persistent=true
+Unit=liwai-cloudflare-push.service
+
+[Install]
+WantedBy=timers.target
