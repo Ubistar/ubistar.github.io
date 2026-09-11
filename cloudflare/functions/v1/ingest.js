@@ -1,4 +1,4 @@
-import { ensureSchema, json, validDashboard } from "../_shared.js";
+import { ensureSchema, json, validDashboard, saveSnapshot, timestamp, readSnapshot } from "../_shared.js";
 
 export function onRequestOptions() {
   return new Response(null, {
@@ -23,21 +23,20 @@ export async function onRequestPost({ request, env }) {
 
   let payload;
   try {
-    payload = await request.json();
+    const text = await request.text();
+    if (new TextEncoder().encode(text).byteLength > 1_000_000) return json({ error: "Payload too large" }, 413);
+    payload = JSON.parse(text);
   } catch {
     return json({ error: "请求体不是有效 JSON" }, 400);
   }
   if (!validDashboard(payload)) return json({ error: "监测快照格式不正确" }, 400);
 
   const now = Date.now();
-  await ensureSchema(env.DB);
-  await env.DB.prepare(`INSERT INTO monitor_snapshots
-    (id, payload, received_at, source_checked_at) VALUES (1, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      payload=excluded.payload,
-      received_at=excluded.received_at,
-      source_checked_at=excluded.source_checked_at`)
-    .bind(JSON.stringify(payload), now, payload.lastCheckedAt)
-    .run();
-  return json({ ok: true, receivedAt: now, sourceCheckedAt: payload.lastCheckedAt });
+  if (timestamp(payload.lastCheckedAt) > now + 60_000) return json({ error: "监测时间不能晚于当前时间" }, 400);
+  try {
+    await ensureSchema(env.DB);
+    await readSnapshot(env);
+    await saveSnapshot(env.DB, payload, now);
+    return json({ ok: true, receivedAt: now, sourceCheckedAt: timestamp(payload.lastCheckedAt) });
+  } catch { return json({ error: "快照保存失败，请重试" }, 503); }
 }
