@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""One-off, stdlib-only recovery from Ubuntu SQLite. No daemon or local writes."""
+"""One-off recovery using Python's stdlib and the existing curl. No daemon or DB writes."""
 import argparse
 from datetime import datetime, time as day_time, timedelta
 import json
+import html
 from pathlib import Path
+import re
 import shlex
 import sqlite3
+import subprocess
 import sys
 import time
 from urllib.error import HTTPError
@@ -15,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Asia/Shanghai")
 ROOM_ID = "1863473244"
+VERSION = "2026-09-12.2"
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -31,6 +35,74 @@ def request_json(url, body=None, token=None):
         body = json.dumps(body, ensure_ascii=False).encode()
     with build_opener(NoRedirect).open(Request(url, data=body, headers=headers), timeout=30) as response:
         return json.load(response)
+
+
+class UploadError(Exception):
+    pass
+
+
+def curl_value(value):
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('\r', '\\r').replace('\n', '\\n') + '"'
+
+
+def upload_json(url, body, token):
+    if not token or '\r' in token or '\n' in token:
+        raise ValueError("推送密钥配置格式异常")
+    # Use the same HTTP client as the installed minute-by-minute pusher. Pass
+    # the credential and body through stdin, never shell text or process argv.
+    config = '\n'.join([
+        'url = ' + curl_value(url),
+        'header = ' + curl_value('Authorization: Bearer ' + token),
+        'header = "Content-Type: application/json"',
+        'header = "Accept: application/json"',
+        'data-binary = ' + curl_value(json.dumps(body, ensure_ascii=False)),
+    ]) + '\n'
+    marker = '\nLIWAI_HTTP_DIAGNOSTICS\t'
+    fields = '\t'.join(['%{http_code}', '%header{content-type}', '%header{server}',
+                        '%header{cf-ray}', '%header{cf-mitigated}'])
+    result = subprocess.run([
+        '/usr/bin/curl', '--disable', '--silent', '--show-error',
+        '--connect-timeout', '10', '--max-time', '30', '--proto', '=https',
+        '--config', '-', '--write-out', marker + fields,
+    ], input=config.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+    if result.returncode:
+        # Do not echo arbitrary curl stderr, request URLs or credentials.
+        raise UploadError(f"curl 连接失败（退出码 {result.returncode}），没有收到整批入库确认。")
+    content, sep, metadata = result.stdout.decode('utf-8', errors='replace').rpartition(marker)
+    if not sep:
+        raise UploadError("curl 未返回可识别的 HTTP 状态。")
+    parts = metadata.split('\t')
+    if len(parts) != 5 or not parts[0].isdigit():
+        raise UploadError("curl 返回的 HTTP 诊断格式异常。")
+    status = int(parts[0])
+    if 200 <= status < 300:
+        try:
+            return json.loads(content)
+        except ValueError:
+            raise UploadError("上传返回了非 JSON 内容，未确认补传成功。") from None
+    details = [f"补传请求失败：HTTP {status}"]
+    for key, value in zip(['Content-Type', 'Server', 'CF-Ray', 'CF-Mitigated'], parts[1:]):
+        if value:
+            details.append(f"{key}: {value}")
+    try:
+        message = json.loads(content).get('error')
+    except (ValueError, AttributeError):
+        match = re.search(r'<title[^>]*>(.*?)</title>', content, re.I | re.S)
+        message = html.unescape(re.sub('<[^>]+>', '', match.group(1))) if match else None
+    if isinstance(message, str):
+        details.append('响应说明: ' + ' '.join(message.replace(token, '[已隐藏]').split())[:240])
+    if status == 401:
+        details.append('接口拒绝了凭据，请核对现有推送配置；不要把密钥发到聊天中。')
+    elif status == 403:
+        details.append('已停止补传；需根据响应标识核对 Cloudflare 或代理的拒绝原因。')
+    elif 300 <= status < 400:
+        details.append('没有跟随重定向，也没有向其他地址转发密钥。')
+    elif status == 404:
+        details.append('未找到补传接口，请核对数据桥的最新部署。')
+    diagnostic = '\n'.join(details).replace(token, '[已隐藏]')
+    # Strip terminal control characters from server-supplied metadata.
+    diagnostic = ''.join(c for c in diagnostic if c == '\n' or (c.isprintable() and c != '\x7f'))
+    raise UploadError(diagnostic)
 
 
 def load_config(path):
@@ -120,6 +192,7 @@ def main():
     parser.add_argument("--db", default="/var/lib/liwai-monitor/monitor.db")
     parser.add_argument("--config", default="/etc/liwai-cloudflare-push.env")
     args = parser.parse_args()
+    print(f"历史补传工具 {VERSION}", flush=True)
     snapshot = request_json("http://127.0.0.1:9999/v1/dashboard")
     if snapshot.get("room", {}).get("id") != ROOM_ID:
         raise ValueError("本机接口直播间不匹配")
@@ -142,10 +215,11 @@ def main():
         print("只读检查完成；加 --apply 才会补传。")
         return
     base, token = load_config(args.config)
+    print("本地重算完成，正在通过 curl 补传…", flush=True)
     inserted, total = 0, None
     for offset in range(0, len(days), 100):
         batch = days[offset:offset + 100]
-        result = request_json(base + "/v1/backfill", {
+        result = upload_json(base + "/v1/backfill", {
             "roomId": ROOM_ID, "sourceCheckedAt": int(checked_at * 1000), "days": batch}, token)
         if result.get("ok") is not True or result.get("present") != len(batch):
             raise ValueError("云端未确认整批日期，停止后续补传；可以安全重试")
@@ -160,8 +234,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except UploadError as error:
+        print(str(error), file=sys.stderr, flush=True)
+        sys.exit(1)
     except HTTPError as error:
-        print(f"请求失败（HTTP {error.code}）。尚未完成；若是 404，请确认数据桥部署完成后重试。", file=sys.stderr)
+        print(f"本机监测接口读取失败（HTTP {error.code}）；尚未开始上传。", file=sys.stderr)
         sys.exit(1)
     except Exception as error:
         # Never print request objects, config contents, or the ingest credential.
