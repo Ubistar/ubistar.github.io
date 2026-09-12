@@ -5,6 +5,7 @@ import { ensureSchema, readSnapshot, saveSnapshot } from '../cloudflare/function
 import { onRequestGet as dashboard } from '../cloudflare/functions/v1/dashboard.js';
 import { onRequestGet as history } from '../cloudflare/functions/v1/history.js';
 import { onRequestPost as ingest } from '../cloudflare/functions/v1/ingest.js';
+import { onRequestPost as backfill } from '../cloudflare/functions/v1/backfill.js';
 
 // Exercise the production SQL against real SQLite. This adapter supplies the D1 method signatures.
 function database() {
@@ -17,7 +18,7 @@ function database() {
   }, async batch(statements) {
     sql.exec('BEGIN');
     try {
-      const results=statements.map(s=>{const p=sql.prepare(s.query);if(p.columns().length)return {results:p.all(...s.values)};p.run(...s.values);return {results:[]};});
+      const results=statements.map(s=>{const p=sql.prepare(s.query);if(p.columns().length)return {results:p.all(...s.values)};const result=p.run(...s.values);return {results:[],meta:{changes:Number(result.changes)}};});
       sql.exec('COMMIT');return results;
     } catch(error) {sql.exec('ROLLBACK');throw error;}
   }}; return db;
@@ -82,4 +83,45 @@ test('ten-year fixture keeps public response size bounded',async()=>{
   const response=await dashboard({env:{DB}});const text=await response.text();
   assert.ok(Buffer.byteLength(text)<6000);assert.ok(Buffer.byteLength(text)<Buffer.byteLength(JSON.stringify(p))/50);
   const page=await (await history({env:{DB},request:request('?page=365&limit=10')})).json();assert.equal(page.items.length,10);assert.equal(page.total,3650);
+});
+
+function repairDay(date, liveSeconds = 3600) {
+  return {date, liveSeconds, lazySeconds:86400-liveSeconds, monitoredSeconds:86400,
+    sessionCount:liveSeconds ? 1 : 0, firstLiveAt:null, lastLiveAt:null,
+    rating:'历史重算', report:'根据保存的直播场次重算'};
+}
+function repair(DB, days, token='repair-test-token', checkedAt=Date.now()) {
+  return backfill({env:{DB,INGEST_TOKEN:'repair-test-token'},request:new Request('https://example.test/v1/backfill',{
+    method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({roomId:'1863473244',sourceCheckedAt:checkedAt,days})})});
+}
+test('backfill restores missing old dates once, preserves existing zero and nonzero days, and never refreshes live clocks', async()=>{
+  const DB=database(), p=fixture(31);p.lastCheckedAt=Date.now()-300000;
+  p.history[1].liveSeconds=0;await legacy(DB,p);await readSnapshot({DB});
+  const before=DB.sql.prepare('SELECT * FROM monitor_snapshots').get();
+  const existing=DB.sql.prepare('SELECT * FROM monitor_days WHERE date=?').get(p.history[1].date);
+  const older=repairDay('2026-07-16');
+  const result=await (await repair(DB,[older,repairDay(p.history[1].date,7200)])).json();
+  assert.deepEqual(result,{ok:true,submitted:2,inserted:1,present:2,historyTotal:32});
+  assert.deepEqual(DB.sql.prepare('SELECT * FROM monitor_days WHERE date=?').get(p.history[1].date),existing);
+  const after=DB.sql.prepare('SELECT * FROM monitor_snapshots').get();
+  assert.equal(after.received_at,before.received_at);assert.equal(after.source_checked_at,before.source_checked_at);
+  const beforePayload=JSON.parse(before.payload);beforePayload.historyTotal=32;
+  assert.deepEqual(JSON.parse(after.payload),beforePayload);assert.equal((await readSnapshot({DB})).stale,true);
+  assert.equal((await (await repair(DB,[older])).json()).inserted,0);
+  await saveSnapshot(DB,{...p,lastCheckedAt:Date.now(),history:p.history.slice(0,7)},Date.now());
+  assert.equal((await readSnapshot({DB})).payload.historyTotal,32);
+  const page=await (await history({env:{DB},request:request('?to=2026-07-16')})).json();
+  assert.equal(page.items[0].liveSeconds,3600);assert.equal(page.items[0].reconstructed,true);
+});
+test('backfill authenticates, rejects incomplete/future/duplicate records, and rolls back on failure', async()=>{
+  const DB=database();await legacy(DB,fixture(7));await readSnapshot({DB});
+  const day=repairDay('2026-07-16');
+  assert.equal((await repair(DB,[day],'wrong')).status,401);
+  for (const days of [[],[day,day],[{...day,liveSeconds:undefined}],[{...day,liveSeconds:-1}],
+    [{...day,liveSeconds:100}],[{...day,date:'2026-02-30'}],[{...day,date:'2100-01-01'}]]) {
+    assert.equal((await repair(DB,days)).status,400);
+  }
+  DB.sql.exec("CREATE TRIGGER reject_repair BEFORE UPDATE ON monitor_snapshots BEGIN SELECT RAISE(ABORT,'test failure'); END;");
+  assert.equal((await repair(DB,[day])).status,503);
+  assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM monitor_days WHERE date=?').get(day.date).n,0);
 });
