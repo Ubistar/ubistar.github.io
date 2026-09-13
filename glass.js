@@ -46,6 +46,15 @@ export function paintWallpaper(canvas){
   const shade=c.createLinearGradient(0,0,0,h);shade.addColorStop(0,'rgba(5,25,35,.1)');shade.addColorStop(.7,'rgba(5,25,35,0)');shade.addColorStop(1,'rgba(5,20,28,.35)');c.fillStyle=shade;c.fillRect(0,0,w,h);
 }
 function luminance(r,g,b){const f=n=>{n/=255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4;};return .2126*f(r)+.7152*f(g)+.0722*f(b);}
+// Choose the minimum tint that gives every sampled point a 6:1 foreground
+// contrast margin. Work in sRGB for compositing, then linear luminance for contrast.
+function readableTint(colors,light){
+  const tint=light?[241,251,245]:[5,24,31],ink=light?[18,44,48]:[246,250,248],fg=luminance(...ink);
+  const passes=alpha=>colors.every(rgb=>{const bg=luminance(...rgb.map((v,i)=>v*(1-alpha)+tint[i]*alpha));return (Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05)>=6;});
+  let low=light?.08:.10,high=.88;if(passes(low))return low;
+  for(let i=0;i<8;i++){const mid=(low+high)/2;if(passes(mid))high=mid;else low=mid;}
+  return high;
+}
 export class BackgroundContrast{
   constructor(video,wallpaper){this.video=video;this.wallpaper=wallpaper;this.sample=document.createElement('canvas');this.sample.width=120;this.sample.height=80;this.ctx=this.sample.getContext('2d',{willReadFrequently:true});this.failedVideo=false;this.last=0;this.loop=this.loop.bind(this);requestAnimationFrame(this.loop);video.addEventListener('loadeddata',()=>{this.failedVideo=false;});}
   loop(now){if(!document.hidden&&document.body.dataset.modalMotion!=='true'&&now-this.last>650){this.last=now;this.update();}requestAnimationFrame(this.loop);}
@@ -59,11 +68,10 @@ export class BackgroundContrast{
       const pixels=ctx.getImageData(0,0,120,80).data;
       document.querySelectorAll('.glass,[data-contrast-zone]').forEach(node=>{
         const r=node.getBoundingClientRect();if(r.width===0||r.bottom<0||r.top>innerHeight)return;
-        const values=[];for(let y=1;y<=4;y++)for(let x=1;x<=5;x++){const px=Math.max(0,Math.min(119,Math.floor((r.left+r.width*x/6)/innerWidth*120))),py=Math.max(0,Math.min(79,Math.floor((r.top+r.height*y/5)/innerHeight*80))),i=(py*120+px)*4;values.push(luminance(pixels[i],pixels[i+1],pixels[i+2]));}
-        const mean=values.reduce((a,b)=>a+b,0)/values.length,old=node.dataset.tone||'dark';const light=old==='light'?mean>.35:mean>.5;
+        const colors=[];for(let y=1;y<=4;y++)for(let x=1;x<=5;x++){const px=Math.max(0,Math.min(119,Math.floor((r.left+r.width*x/6)/innerWidth*120))),py=Math.max(0,Math.min(79,Math.floor((r.top+r.height*y/5)/innerHeight*80))),i=(py*120+px)*4;colors.push([pixels[i],pixels[i+1],pixels[i+2]]);}
+        const values=colors.map(rgb=>luminance(...rgb)),mean=values.reduce((a,b)=>a+b,0)/values.length,old=node.dataset.tone||'dark';const light=old==='light'?mean>.35:mean>.5;
         node.dataset.tone=light?'light':'dark';
-        const high=Math.max(...values),low=Math.min(...values);
-        let alpha=light?Math.max(.08,Math.min(.56,(.48-low)/(1-low))):Math.max(.10,Math.min(.62,1-Math.pow(.095/Math.max(high,.095),1/2.2)));
+        let alpha=readableTint(colors,light);
         if(node.closest('dialog'))alpha=Math.max(alpha,.46);
         node.style.setProperty('--tint',light?`rgba(241,251,245,${alpha})`:`rgba(5,24,31,${alpha})`);
       });
