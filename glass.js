@@ -1,4 +1,4 @@
-import { generateLiquidGlassMaps } from './lib/glass-maps.js?v=3.2.0';
+import { generateLiquidGlassMaps } from './lib/glass-maps.js?v=3.3.0';
 const NS='http://www.w3.org/2000/svg';
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const filters=document.createElementNS(NS,'svg');filters.setAttribute('aria-hidden','true');filters.style.cssText='position:fixed;width:0;height:0;pointer-events:none';

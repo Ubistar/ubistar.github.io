@@ -1,7 +1,7 @@
-import {API_BASE,number,hasNumber,pad,stamp,esc,duration,clock,dateCN,time,normalize,stale,current,summarize,verdict,createClient} from './lib/data.js?v=3.2.0';
-import {refreshGlass,paintWallpaper,BackgroundContrast} from './glass.js?v=3.2.0';
-import {attachModuleInteractions,ModuleDialog} from './lib/interaction.js?v=3.2.0';
-import {LiveBackground} from './lib/media.js?v=3.2.0';
+import {API_BASE,number,hasNumber,pad,stamp,esc,duration,clock,dateCN,time,normalize,stale,current,summarize,verdict,createClient} from './lib/data.js?v=3.3.0';
+import {refreshGlass,paintWallpaper,BackgroundContrast} from './glass.js?v=3.3.0';
+import {attachModuleInteractions,ModuleDialog} from './lib/interaction.js?v=3.3.0';
+import {LiveBackground} from './lib/media.js?v=3.3.0';
 const $=id=>document.getElementById(id), client=createClient(),CACHE='liwai-observatory-v3';
 const state={d:null,failed:false,loading:false,view:'overview',period:30,insights:new Map(),insightRequests:new Map(),detail:null,detailSequence:0,
   history:{page:1,limit:10,from:'',to:'',pages:1,total:0,items:[],loading:false,sequence:0,controller:null}};

@@ -1,15 +1,16 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-ui="modern">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#142831">
   <meta name="description" content="蠡歪煮啵偷懒旷工监测站。实时直播状态、每日出勤、周报与历史台账。">
   <meta name="referrer" content="no-referrer">
+  <script src="./version.js?v=3.3.0"></script>
   <title>蠡歪 · 直播观察室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=3.2.0">
-  <script type="module" src="./app.js?v=3.2.0"></script>
+  <link rel="stylesheet" href="./styles.css?v=3.3.0">
+  <script type="module" src="./app.js?v=3.3.0"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳至主要内容</a>
@@ -26,7 +27,7 @@
         <a href="#reports" data-view="reports"><svg><use href="#i-chart"/></svg><span>出勤报告</span></a>
         <a href="#history" data-view="history"><svg><use href="#i-calendar"/></svg><span>历史台账</span></a>
       </nav>
-      <div class="header-actions"><span id="connection" class="connection" data-contrast-zone><i></i>连接中</span><button id="refresh" class="glass icon-button" aria-label="刷新监测数据" data-radius="24"><svg><use href="#i-refresh"/></svg></button></div>
+      <div class="header-actions"><a href="./legacy/" class="glass version-switch" data-ui-switch="legacy" data-radius="22" title="切换到默认公报主题时的旧版网页">公报旧版 ↗</a><span id="connection" class="connection" data-contrast-zone><i></i>连接中</span><button id="refresh" class="glass icon-button" aria-label="刷新监测数据" data-radius="24"><svg><use href="#i-refresh"/></svg></button></div>
     </header>
     <main id="main" tabindex="-1">
       <div id="notice" class="glass notice" role="status" hidden><span id="noticeText"></span><button id="retry" class="text-button">重试</button></div>
