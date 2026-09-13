@@ -1,43 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
 import fs from 'node:fs';
-const source=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-function harness({storageFails=false}={}) {
-  const nodes=new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(x=>[x[1],{id:x[1],textContent:'',innerHTML:'',hidden:false,value:'',style:{},dataset:{},events:{},disabled:false,
-    addEventListener(event,fn){this.events[event]=fn;},classList:{add(){},remove(){}},setAttribute(k,v){this[k]=v;},removeAttribute(k){delete this[k];},showModal(){this.open=true;},close(){this.open=false;}}]));
-  const document={hidden:false,events:{},getElementById(id){if(!nodes.has(id))throw Error(`Missing element ${id}`);return nodes.get(id);},querySelectorAll(selector){return selector==='.view'?[...nodes.values()].filter(n=>n.id.startsWith('view-')):[];},addEventListener(k,v){this.events[k]=v;}};
-  const requests=[],intervals=[],events={},pending=[];
-  const context=vm.createContext({console,Intl,URLSearchParams,AbortController,Date,Map,Set,Number,String,Math,JSON,Promise,document,location:{hash:''},window:{addEventListener(k,v){events[k]=v;}},
-    localStorage:{getItem(){if(storageFails)throw Error('blocked');return null;},setItem(){if(storageFails)throw Error('blocked');},removeItem(){if(storageFails)throw Error('blocked');}},
-    setInterval(fn,ms){intervals.push({fn,ms});},setTimeout(){return 1;},clearTimeout(){},
-    fetch(url,options){requests.push({url,options});return new Promise((resolve,reject)=>pending.push({resolve,reject}));}});
-  vm.runInContext(source,context);
-  const data={archiveVersion:2,room:{title:'test'},live:false,verified:true,lastCheckedAt:Date.now()-5000,currentStatusSeconds:3600,today:{date:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(new Date()),liveSeconds:600,lazySeconds:3000},week:{},history:[],historyTotal:500};
-  return {nodes,document,requests,intervals,events,pending,context,data,async settle(){await new Promise(setImmediate);await new Promise(setImmediate);},resolve(body){pending.shift().resolve({ok:true,json:async()=>body});}};
+import {normalize,current,dateCN,stale,duration,summarize,createClient,esc} from '../lib/data.js';
+import {attachModuleInteractions} from '../lib/interaction.js';
+const now=Date.now(),day={date:dateCN(now),liveSeconds:600,lazySeconds:3000};
+const base={live:true,verified:true,lastCheckedAt:now-5000,currentStatusSeconds:3600,today:day,week:{},history:[],historyTotal:100};
+test('overview cache is bounded and stale counters freeze without inventing missing durations',()=>{
+  const d=normalize({...base,history:Array.from({length:90},(_,i)=>({date:dateCN(now-i*86400000)}))});
+  assert.equal(d.history.length,7);assert.equal(current(d,false,now).status,3605);assert.equal(current(d,true,now).status,3600);
+  assert.equal(stale(d,false,now+240000),true);assert.equal(duration(undefined),'—');assert.equal(duration(0),'0小时 00分');
+  assert.equal(current({...d,today:{...d.today,date:'2000-01-01'}},false,now).live,600);
+});
+test('summaries distinguish missing days, incomplete today and real zero values',()=>{
+  const s=summarize([{date:'2026-08-11',liveSeconds:1985,lazySeconds:84415},{date:'2026-08-12',liveSeconds:0,lazySeconds:86400},
+    {date:'2026-08-13'},{date:'2026-09-14',liveSeconds:7200,lazySeconds:500,isToday:true}]);
+  assert.equal(s.known,3);assert.equal(s.closed,2);assert.equal(s.average,992.5);assert.equal(s.best.date,'2026-08-11');assert.deepEqual(s.distribution,[1,1,0,0,0]);
+  assert.equal(esc('<img src=x onerror="bad">'),'&lt;img src=x onerror=&quot;bad&quot;&gt;');
+});
+test('client starts no background requests, caches by bounded page and coalesces concurrent statistics',async()=>{
+  const requests=[];const client=createClient(async url=>{requests.push(url);return {ok:true,json:async()=>({items:[]})};});assert.equal(requests.length,0);
+  await client.get('overview');await client.get('overview');assert.equal(requests.length,1);
+  await client.get('history?page=1&limit=10');await client.get('history?page=2&limit=10');assert.equal(requests.length,3);
+  await Promise.all([client.get('insights?days=30'),client.get('insights?days=30')]);assert.equal(requests.length,4);
+  await client.get('overview',{force:true});assert.equal(requests.length,5);
+});
+function interactions(){const handlers={},timers=new Map();let i=0,opens=0,toasts=0;const root={addEventListener(name,fn){handlers[name]=fn;}};
+  const node={classList:{add(){},remove(){}},closest(selector){return selector==='[data-module]'?node:null;}};
+  attachModuleInteractions(root,{open(){opens++;},toast(){toasts++;},setTimer(fn){timers.set(++i,fn);return i;},clearTimer(id){timers.delete(id);}});
+  const event=(extra={})=>({target:node,pointerType:'touch',pointerId:1,clientX:10,clientY:10,button:0,preventDefault(){},...extra});
+  return {handlers,event,get opens(){return opens;},get toasts(){return toasts;},fire(){for(const fn of [...timers.values()])fn();timers.clear();}};
 }
-test('first visit fetches only overview; history is lazy and pages fetch bounded queries',async()=>{
-  const h=harness();assert.equal(h.requests.length,1);assert.match(h.requests[0].url,/\/overview$/);h.resolve(h.data);await h.settle();
-  h.context.location.hash='#history';h.events.hashchange();assert.equal(h.requests.length,2);assert.match(h.requests[1].url,/history\?page=1&limit=10$/);
-  h.resolve({items:[{date:'2026-09-10',report:'x'}],page:1,pages:5,limit:10,total:50});await h.settle();
-  assert.equal(h.nodes.get('nextPage').disabled,false);h.nodes.get('nextPage').events.click();assert.match(h.requests.at(-1).url,/page=2&limit=10/);
+test('touch long-press opens once, suppresses release click and scroll movement cancels it',()=>{
+  const a=interactions();a.handlers.pointerdown(a.event());a.fire();a.handlers.click(a.event());assert.equal(a.opens,1);
+  const b=interactions();b.handlers.pointerdown(b.event());b.handlers.pointermove(b.event({clientX:24}));b.fire();assert.equal(b.opens,0);
+  const c=interactions();c.handlers.pointerdown(c.event());c.handlers.pointercancel(c.event());c.fire();assert.equal(c.opens,0);
+  const d=interactions();d.handlers.pointerdown(d.event());d.handlers.scroll();d.fire();assert.equal(d.opens,0);
 });
-test('failed refresh freezes an existing live timer and local storage failures do not block data',async()=>{
-  const h=harness({storageFails:true});h.resolve(h.data);await h.settle();assert.equal(h.nodes.get('statusClock').textContent,'01:00:05');
-  h.nodes.get('refresh').events.click();h.pending.shift().reject(new Error('offline'));await h.settle();
-  assert.equal(h.nodes.get('statusClock').textContent,'01:00:00');assert.equal(h.nodes.get('connection').textContent,'等待更新');assert.equal(h.nodes.get('notice').hidden,false);
+test('desktop click, keyboard entry and mobile short-tap feedback',()=>{
+  const a=interactions();a.handlers.click(a.event({pointerType:'mouse'}));assert.equal(a.opens,1);
+  const b=interactions();b.handlers.click(b.event());assert.equal(b.opens,0);assert.equal(b.toasts,1);
+  const c=interactions();c.handlers.keydown(c.event({key:'Enter'}));assert.equal(c.opens,1);
 });
-test('hidden pages do not poll, and untrusted history text is escaped',async()=>{
-  const h=harness();h.resolve(h.data);await h.settle();h.document.hidden=true;h.intervals.find(x=>x.ms===60000).fn();assert.equal(h.requests.length,1);
-  h.document.hidden=false;h.context.location.hash='#history';h.events.hashchange();
-  h.resolve({items:[{date:'2026-09-10',rating:'<img src=x onerror=alert(1)>'}],total:1,pages:1});await h.settle();
-  const rows=h.nodes.get('historyRows').innerHTML;assert.ok(rows.includes('&lt;img'));assert.ok(!rows.includes('<img'));
-});
-test('late history response cannot replace a newer filter result',async()=>{
-  const h=harness();h.resolve(h.data);await h.settle();h.context.location.hash='#history';h.events.hashchange();
-  const old=h.pending.shift();h.nodes.get('dateFrom').value='2026-08-01';h.nodes.get('historyFilter').events.submit({preventDefault(){}});
-  h.resolve({items:[{date:'2026-08-22'}],total:1,pages:1});await h.settle();
-  old.resolve({ok:true,json:async()=>({items:[{date:'2020-01-01'}],total:1,pages:1})});await h.settle();
-  assert.ok(h.nodes.get('historyRows').innerHTML.includes('2026-08-22'));assert.ok(!h.nodes.get('historyRows').innerHTML.includes('2020-01-01'));
+test('all static application controls exist in the document',()=>{
+  const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8'),html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+  for(const [,id]of app.matchAll(/\$\('([^']+)'\)/g))assert.ok(html.includes(`id="${id}"`),id);
 });

@@ -101,3 +101,10 @@ python3 /tmp/liwai-backfill-history.py --apply
 node --test tests/archive.test.mjs
 python3 -m unittest discover -s tests -p 'test_backfill.py' -v
 ```
+
+## 3.0 区间统计与直播元数据
+
+- `GET /v1/insights?days=7|30|90`：从永久日归档读取有界日期范围；返回精简日统计与全库聚合计数/时长，不下载全库日记录。缺失日期不补成零。该接口不改写日归档。
+- `GET /v1/stream`：仅在当前快照新鲜且直播时，解析固定房间 1863473244 的公开 AVC HLS 地址。只返回经过 HTTPS/Bilibili CDN 域名验证的候选地址与过期时间；不代理视频字节、不接收任意房间或任意目标地址。B 站拒绝或无兼容流时返回不可用状态，客户端可手动重试。
+
+沿用现有 D1 绑定，无新增密钥、定时器或数据库迁移。

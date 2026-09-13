@@ -125,3 +125,6 @@ test('backfill authenticates, rejects incomplete/future/duplicate records, and r
   assert.equal((await repair(DB,[day])).status,503);
   assert.equal(DB.sql.prepare('SELECT COUNT(*) AS n FROM monitor_days WHERE date=?').get(day.date).n,0);
 });
+
+// Reusable real-SQLite fixtures for read-only endpoints.
+export { database, fixture, legacy };
