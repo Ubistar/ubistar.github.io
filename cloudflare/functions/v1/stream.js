@@ -37,8 +37,32 @@ export async function onRequestGet({ env }) {
     const response = await fetch(endpoint, { headers: { Accept:'application/json',
       'User-Agent':'LiWaiMonitor/3.0', Referer:`https://live.bilibili.com/${ROOM_ID}` },
       signal:AbortSignal.timeout(8000), cf:{cacheTtl:30,cacheEverything:true} });
-    if (!response.ok) return json({available:false,reason:'B站暂未提供可播放画面'},503);
-    const body = await response.json(), streams = extractStreams(body);
+    if (!response.ok) {
+      console.warn('Bilibili play-info failed', {
+        roomId: ROOM_ID,
+        upstreamStatus: response.status
+      });
+      return json({
+        available: false,
+        reason: `获取直播地址失败：B站接口返回 HTTP ${response.status}`,
+        upstreamStatus: response.status
+      }, 503);
+    }
+
+    const body = await response.json();
+    if (body.code !== 0) {
+      console.warn('Bilibili play-info rejected', {
+        roomId: ROOM_ID,
+        upstreamCode: body.code
+      });
+      return json({
+        available: false,
+        reason: `获取直播地址失败：B站业务错误码 ${body.code}`,
+        upstreamCode: body.code
+      }, 503);
+    }
+
+    const streams = extractStreams(body);
     if (!streams.length) return json({available:false,reason:'直播画面暂不可用'},503);
     const expires = streams.map(item=>Number(new URL(item.url).searchParams.get('expires'))*1000).filter(x=>x>Date.now());
     return json({available:true,roomId:ROOM_ID,streams,
